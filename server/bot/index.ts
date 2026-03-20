@@ -3,9 +3,7 @@ import { db } from '../db/index.js';
 import { users, channels, posts } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { createPresentation } from '../services/figma.js';
-import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+import { generateSlidesStructure } from '../services/claude.js';
 
 bot.start(async (ctx) => {
   try {
@@ -97,29 +95,7 @@ bot.on('text', async (ctx) => {
       await ctx.reply('Генерирую структуру презентации...');
       
       try {
-        const prompt = `Создай структуру презентации для продукта.
-Данные: ${ctx.message.text}
-Верни ТОЛЬКО валидный JSON массив объектов SlideData.
-Формат SlideData:
-{
-  "type": "title" | "problem" | "solution" | "benefits" | "price" | "cta",
-  "heading": "string",
-  "subheading": "string",
-  "text": "string",
-  "points": ["string"],
-  "items": [{"icon": "string", "text": "string"}],
-  "plans": [{"name": "string", "price": "string", "features": ["string"]}],
-  "contact": "string"
-}`;
-
-        const response = await anthropic.messages.create({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 2048,
-          messages: [{ role: 'user', content: prompt }],
-        });
-
-        const jsonStr = (response.content[0] as any).text;
-        const slides = JSON.parse(jsonStr.replace(/```json\n?|\n?```/g, ''));
+        const slides = await generateSlidesStructure(ctx.message.text);
 
         await ctx.reply('Создаю презентацию в Figma...');
         const url = await createPresentation(slides);

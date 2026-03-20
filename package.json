@@ -15,7 +15,7 @@
     "check": "tsc --noEmit -p server/tsconfig.json && cd client && tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.33.1",
+    "openai": "^4.77.0",
     "@fal-ai/client": "^1.2.0",
     "@trpc/server": "^11.0.0-rc.666",
     "@trpc/client": "^11.0.0-rc.666",

@@ -1,11 +1,19 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const openai = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY,
+  baseURL: 'https://openrouter.ai/api/v1',
+  defaultHeaders: {
+    'HTTP-Referer': 'https://telegram-channel-manager.railway.app',
+    'X-Title': 'Telegram Channel Manager',
+  },
 });
+
+// Use claude-sonnet-4-6 via OpenRouter or fallback to claude-3.5-sonnet
+const MODEL = 'anthropic/claude-sonnet-4-5';
 
 export async function generatePost(channel: any, sourceContent: string): Promise<string> {
   const prompt = `Ты опытный контент-менеджер Telegram-канала.
@@ -28,13 +36,13 @@ ${sourceContent.slice(0, 3000)}
 Цель: продать или прогреть к покупке.
 Верни ТОЛЬКО текст поста, без объяснений.`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+  const response = await openai.chat.completions.create({
+    model: MODEL,
     max_tokens: 1024,
     messages: [{ role: 'user', content: prompt }],
   });
 
-  return (response.content[0] as any).text;
+  return response.choices[0].message.content || '';
 }
 
 export async function generateImagePrompt(postText: string): Promise<string> {
@@ -45,13 +53,13 @@ export async function generateImagePrompt(postText: string): Promise<string> {
 Пост:
 ${postText}`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+  const response = await openai.chat.completions.create({
+    model: MODEL,
     max_tokens: 256,
     messages: [{ role: 'user', content: prompt }],
   });
 
-  return (response.content[0] as any).text;
+  return response.choices[0].message.content || '';
 }
 
 export async function regeneratePost(channel: any, oldPostText: string, feedback: string): Promise<string> {
@@ -74,11 +82,37 @@ ${feedback}
 Перепиши пост с учетом замечаний.
 Верни ТОЛЬКО текст поста, без объяснений.`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+  const response = await openai.chat.completions.create({
+    model: MODEL,
     max_tokens: 1024,
     messages: [{ role: 'user', content: prompt }],
   });
 
-  return (response.content[0] as any).text;
+  return response.choices[0].message.content || '';
+}
+
+export async function generateSlidesStructure(productData: string): Promise<any[]> {
+  const prompt = `Создай структуру презентации для продукта.
+Данные: ${productData}
+Верни ТОЛЬКО валидный JSON массив объектов SlideData.
+Формат SlideData:
+{
+  "type": "title" | "problem" | "solution" | "benefits" | "price" | "cta",
+  "heading": "string",
+  "subheading": "string",
+  "text": "string",
+  "points": ["string"],
+  "items": [{"icon": "string", "text": "string"}],
+  "plans": [{"name": "string", "price": "string", "features": ["string"]}],
+  "contact": "string"
+}`;
+
+  const response = await openai.chat.completions.create({
+    model: MODEL,
+    max_tokens: 2048,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const jsonStr = response.choices[0].message.content || '[]';
+  return JSON.parse(jsonStr.replace(/```json\n?|\n?```/g, ''));
 }
