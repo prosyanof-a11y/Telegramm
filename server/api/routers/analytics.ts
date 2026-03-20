@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { router, adminProcedure } from '../../_core/trpc.js';
-import { posts, channels } from '../../db/schema.js';
+import { posts } from '../../db/schema.js';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
 
 export const analyticsRouter = router({

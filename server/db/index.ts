@@ -8,8 +8,8 @@ dotenv.config();
 const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
-  throw new Error('DATABASE_URL is not set');
+  console.warn('WARNING: DATABASE_URL is not set. Database operations will fail.');
 }
 
-const client = postgres(connectionString, { prepare: false });
+const client = postgres(connectionString || 'postgresql://localhost:5432/placeholder', { prepare: false });
 export const db = drizzle(client, { schema });

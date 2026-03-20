@@ -8,6 +8,7 @@ import Anthropic from '@anthropic-ai/sdk';
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 bot.start(async (ctx) => {
+  if (!ctx.from) return;
   const telegramId = ctx.from.id.toString();
   const username = ctx.from.username;
 
@@ -35,6 +36,7 @@ bot.action(/reject_(.+)/, async (ctx) => {
 const presentationState = new Map<number, { step: number, channelId?: string }>();
 
 bot.command('presentation', async (ctx) => {
+  if (!ctx.from) return;
   const telegramId = ctx.from.id.toString();
   const [user] = await db.select().from(users).where(eq(users.telegramId, telegramId));
   if (!user) return ctx.reply('Пользователь не найден.');
@@ -52,6 +54,7 @@ bot.command('presentation', async (ctx) => {
 });
 
 bot.action(/pres_chan_(.+)/, async (ctx) => {
+  if (!ctx.from) return;
   const channelId = ctx.match[1];
   const state = presentationState.get(ctx.from.id);
   if (state && state.step === 1) {
@@ -62,6 +65,7 @@ bot.action(/pres_chan_(.+)/, async (ctx) => {
 });
 
 bot.on('text', async (ctx) => {
+  if (!ctx.from) return;
   const state = presentationState.get(ctx.from.id);
   if (state && state.step === 2 && state.channelId) {
     ctx.reply('Генерирую структуру презентации...');
@@ -83,12 +87,12 @@ bot.on('text', async (ctx) => {
 }`;
 
       const response = await anthropic.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-sonnet-4-6',
         max_tokens: 2048,
         messages: [{ role: 'user', content: prompt }],
       });
 
-      const jsonStr = (response.content[0] as any).text;
+      const jsonStr = (response.content[0] as { type: string; text: string }).text;
       const slides = JSON.parse(jsonStr.replace(/```json\n?|\n?```/g, ''));
 
       ctx.reply('Создаю презентацию в Figma...');
@@ -105,6 +109,10 @@ bot.on('text', async (ctx) => {
 });
 
 export function startBot() {
+  if (!process.env.TELEGRAM_BOT_TOKEN) {
+    console.warn('[Bot] TELEGRAM_BOT_TOKEN не установлен, бот не запущен');
+    return;
+  }
   bot.launch().then(() => {
     console.log('[Bot] Telegram бот запущен');
   }).catch(err => {

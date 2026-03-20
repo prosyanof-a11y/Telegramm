@@ -3,10 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const botToken = process.env.TELEGRAM_BOT_TOKEN;
-if (!botToken) {
-  throw new Error('TELEGRAM_BOT_TOKEN is not set');
-}
+const botToken = process.env.TELEGRAM_BOT_TOKEN || 'placeholder_token';
 
 export const bot = new Telegraf(botToken);
 

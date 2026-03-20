@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { db } from '../db/index.js';
-import { posts, channels, schedules } from '../db/schema.js';
+import { posts, channels } from '../db/schema.js';
 import { eq, and, lte } from 'drizzle-orm';
 import { publishPost } from '../services/telegram.js';
 
