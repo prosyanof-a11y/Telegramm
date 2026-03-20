@@ -4,7 +4,6 @@ import { posts, channels } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
 import { generatePost, generateImagePrompt, regeneratePost } from '../../services/claude.js';
 import { generateImage } from '../../services/flux.js';
-import { publishPost } from '../../services/telegram.js';
 
 export const postsRouter = router({
   list: adminProcedure
@@ -41,7 +40,7 @@ export const postsRouter = router({
         imageUrl,
         status: 'pending_approval',
         sourceType: 'text',
-      }).returning();
+      } as any).returning();
 
       return post;
     }),
@@ -50,7 +49,7 @@ export const postsRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const [post] = await ctx.db.update(posts)
-        .set({ status: 'approved' })
+        .set({ status: 'approved' } as any)
         .where(eq(posts.id, input.id))
         .returning();
       return post;
@@ -60,7 +59,7 @@ export const postsRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const [post] = await ctx.db.update(posts)
-        .set({ status: 'rejected' })
+        .set({ status: 'rejected' } as any)
         .where(eq(posts.id, input.id))
         .returning();
       return post;
@@ -80,7 +79,7 @@ export const postsRouter = router({
       const newText = await regeneratePost(channel, post.text, input.feedback);
       
       const [updatedPost] = await ctx.db.update(posts)
-        .set({ text: newText, status: 'pending_approval' })
+        .set({ text: newText, status: 'pending_approval' } as any)
         .where(eq(posts.id, input.id))
         .returning();
 

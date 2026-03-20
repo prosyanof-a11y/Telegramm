@@ -16,7 +16,7 @@ export async function createContext({ req, res }: CreateExpressContextOptions) {
     if (existingUser) {
       user = existingUser;
     } else {
-      const [newUser] = await db.insert(users).values({ telegramId }).returning();
+      const [newUser] = await db.insert(users).values({ telegramId } as any).returning();
       user = newUser;
     }
   }

@@ -29,7 +29,7 @@ export function startScheduler() {
             status: 'published',
             publishedAt: new Date(),
             telegramMessageId: messageId,
-          }).where(eq(posts.id, post.id));
+          } as any).where(eq(posts.id, post.id));
           
         } catch (error: any) {
           console.error(`Error publishing post ${post.id}:`, error);
@@ -37,7 +37,7 @@ export function startScheduler() {
             status: 'failed',
             errorMessage: error.message,
             retryCount: (post.retryCount || 0) + 1,
-          }).where(eq(posts.id, post.id));
+          } as any).where(eq(posts.id, post.id));
         }
       }
     } catch (error) {

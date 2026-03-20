@@ -14,7 +14,7 @@ bot.start(async (ctx) => {
 
   const [existingUser] = await db.select().from(users).where(eq(users.telegramId, telegramId));
   if (!existingUser) {
-    await db.insert(users).values({ telegramId, username });
+    await db.insert(users).values({ telegramId, username } as any);
   }
 
   ctx.reply('Добро пожаловать в Telegram Channel Manager! Ваш аккаунт зарегистрирован.');
@@ -22,13 +22,13 @@ bot.start(async (ctx) => {
 
 bot.action(/approve_(.+)/, async (ctx) => {
   const postId = ctx.match[1];
-  await db.update(posts).set({ status: 'approved' }).where(eq(posts.id, postId));
+  await db.update(posts).set({ status: 'approved' } as any).where(eq(posts.id, postId));
   ctx.reply('Пост одобрен и добавлен в очередь.');
 });
 
 bot.action(/reject_(.+)/, async (ctx) => {
   const postId = ctx.match[1];
-  await db.update(posts).set({ status: 'rejected' }).where(eq(posts.id, postId));
+  await db.update(posts).set({ status: 'rejected' } as any).where(eq(posts.id, postId));
   ctx.reply('Пост отклонен.');
 });
 
@@ -44,7 +44,7 @@ bot.command('presentation', async (ctx) => {
   const userChannels = await db.select().from(channels).where(eq(channels.userId, user.id));
   if (userChannels.length === 0) return ctx.reply('У вас нет каналов.');
 
-  const buttons = userChannels.map(c => [{ text: c.name, callback_data: `pres_chan_${c.id}` }]);
+  const buttons = userChannels.map((c: any) => [{ text: c.name, callback_data: `pres_chan_${c.id}` }]);
   
   presentationState.set(ctx.from.id, { step: 1 });
   
@@ -92,7 +92,7 @@ bot.on('text', async (ctx) => {
         messages: [{ role: 'user', content: prompt }],
       });
 
-      const jsonStr = (response.content[0] as { type: string; text: string }).text;
+      const jsonStr = (response.content[0] as any).text;
       const slides = JSON.parse(jsonStr.replace(/```json\n?|\n?```/g, ''));
 
       ctx.reply('Создаю презентацию в Figma...');
@@ -115,7 +115,7 @@ export function startBot() {
   }
   bot.launch().then(() => {
     console.log('[Bot] Telegram бот запущен');
-  }).catch(err => {
+  }).catch((err: any) => {
     console.error('[Bot] Ошибка запуска бота:', err);
   });
 }

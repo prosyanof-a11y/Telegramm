@@ -17,7 +17,7 @@ export const documentsRouter = router({
         channelId: input.channelId,
         filename: input.filename,
         content: input.content,
-      }).returning();
+      } as any).returning();
       return doc;
     }),
 
@@ -53,9 +53,9 @@ export const documentsRouter = router({
         imageUrl,
         status: 'pending_approval',
         sourceType: 'document',
-      }).returning();
+      } as any).returning();
 
-      await ctx.db.update(documents).set({ processed: true }).where(eq(documents.id, input.id));
+      await ctx.db.update(documents).set({ processed: true } as any).where(eq(documents.id, input.id));
 
       return post;
     }),

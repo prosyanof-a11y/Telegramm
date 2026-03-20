@@ -29,9 +29,17 @@ export const channelsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const [newChannel] = await ctx.db.insert(channels).values({
-        ...input,
+        telegramChannelId: input.telegramChannelId,
+        name: input.name,
         userId: ctx.user.id,
-      }).returning();
+        niche: input.niche,
+        tone: input.tone,
+        targetAudience: input.targetAudience,
+        productDescription: input.productDescription,
+        exampleGoodPost: input.exampleGoodPost,
+        postFrequency: input.postFrequency,
+        active: input.active,
+      } as any).returning();
       return newChannel;
     }),
 
@@ -51,7 +59,7 @@ export const channelsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const [updatedChannel] = await ctx.db.update(channels)
-        .set(data)
+        .set(data as any)
         .where(eq(channels.id, id))
         .returning();
       return updatedChannel;
