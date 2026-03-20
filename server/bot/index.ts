@@ -113,9 +113,18 @@ export function startBot() {
     console.warn('[Bot] TELEGRAM_BOT_TOKEN не установлен, бот не запущен');
     return;
   }
-  bot.launch().then(() => {
-    console.log('[Bot] Telegram бот запущен');
+  
+  console.log('[Bot] Запуск Telegram бота...');
+  
+  bot.launch({
+    allowedUpdates: ['message', 'callback_query'],
+  }).then(() => {
+    console.log('[Bot] Telegram бот запущен успешно');
   }).catch((err: any) => {
-    console.error('[Bot] Ошибка запуска бота:', err);
+    console.error('[Bot] Ошибка запуска бота:', err.message || err);
   });
+
+  // Enable graceful stop
+  process.once('SIGINT', () => bot.stop('SIGINT'));
+  process.once('SIGTERM', () => bot.stop('SIGTERM'));
 }
