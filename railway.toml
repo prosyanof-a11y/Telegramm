@@ -4,3 +4,12 @@ buildCommand = "npm run build"
 
 [deploy]
 startCommand = "npm start"
+
+# Required environment variables (set in Railway Dashboard → Settings → Variables):
+# OPENROUTER_API_KEY - your OpenRouter API key from openrouter.ai
+# TELEGRAM_BOT_TOKEN - your Telegram bot token from @BotFather
+# DATABASE_URL - your Supabase database URL
+# FAL_API_KEY - your fal.ai API key
+# TELEGRAM_ADMIN_CHAT_ID - your Telegram user ID
+# NODE_ENV=production
+# PORT=3000
