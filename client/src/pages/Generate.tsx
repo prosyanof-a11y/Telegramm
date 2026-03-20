@@ -5,10 +5,25 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Check, X, RefreshCw } from 'lucide-react';
+import { Loader2, Check, X, RefreshCw, Brain } from 'lucide-react';
+
+const AI_MODELS = [
+  { value: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5 (Anthropic)' },
+  { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (Anthropic)' },
+  { value: 'anthropic/claude-3-haiku', label: 'Claude 3 Haiku (быстрый)' },
+  { value: 'openai/gpt-4o', label: 'GPT-4o (OpenAI)' },
+  { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (быстрый)' },
+  { value: 'openai/gpt-4-turbo', label: 'GPT-4 Turbo (OpenAI)' },
+  { value: 'google/gemini-pro-1.5', label: 'Gemini Pro 1.5 (Google)' },
+  { value: 'google/gemini-flash-1.5', label: 'Gemini Flash 1.5 (быстрый)' },
+  { value: 'meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B (Meta)' },
+  { value: 'mistralai/mistral-large', label: 'Mistral Large' },
+  { value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat' },
+];
 
 export default function Generate() {
   const [selectedChannel, setSelectedChannel] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>('anthropic/claude-sonnet-4-5');
   const [sourceType, setSourceType] = useState<'text' | 'document' | 'search'>('text');
   const [sourceContent, setSourceContent] = useState('');
   const [generatedPost, setGeneratedPost] = useState<any>(null);
@@ -37,6 +52,7 @@ export default function Generate() {
       channelId: selectedChannel,
       sourceContent,
       withImage: true,
+      model: selectedModel,
     });
   };
 
@@ -57,6 +73,22 @@ export default function Generate() {
                 <SelectContent>
                   {channels?.map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <Brain className="h-4 w-4" /> Модель ИИ
+              </label>
+              <Select value={selectedModel} onValueChange={setSelectedModel}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите модель" />
+                </SelectTrigger>
+                <SelectContent>
+                  {AI_MODELS.map(m => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -148,7 +180,7 @@ export default function Generate() {
                   <Button 
                     variant="outline" 
                     className="w-full"
-                    onClick={() => regeneratePost.mutate({ id: generatedPost.id, feedback })}
+                    onClick={() => regeneratePost.mutate({ id: generatedPost.id, feedback, model: selectedModel })}
                     disabled={!feedback || regeneratePost.isPending}
                   >
                     {regeneratePost.isPending ? (

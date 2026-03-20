@@ -21,16 +21,17 @@ export const postsRouter = router({
       channelId: z.string().uuid(),
       sourceContent: z.string(),
       withImage: z.boolean().default(true),
+      model: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const [channel] = await ctx.db.select().from(channels).where(eq(channels.id, input.channelId));
       if (!channel) throw new Error('Channel not found');
 
-      const text = await generatePost(channel, input.sourceContent);
+      const text = await generatePost(channel, input.sourceContent, input.model);
       let imageUrl = null;
 
       if (input.withImage) {
-        const imagePrompt = await generateImagePrompt(text);
+        const imagePrompt = await generateImagePrompt(text, input.model);
         imageUrl = await generateImage(imagePrompt);
       }
 
@@ -69,6 +70,7 @@ export const postsRouter = router({
     .input(z.object({
       id: z.string().uuid(),
       feedback: z.string(),
+      model: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const [post] = await ctx.db.select().from(posts).where(eq(posts.id, input.id));
@@ -76,7 +78,7 @@ export const postsRouter = router({
 
       const [channel] = await ctx.db.select().from(channels).where(eq(channels.id, post.channelId));
       
-      const newText = await regeneratePost(channel, post.text, input.feedback);
+      const newText = await regeneratePost(channel, post.text, input.feedback, input.model);
       
       const [updatedPost] = await ctx.db.update(posts)
         .set({ text: newText, status: 'pending_approval' } as any)

@@ -12,10 +12,10 @@ const openai = new OpenAI({
   },
 });
 
-// Use claude-sonnet-4-6 via OpenRouter or fallback to claude-3.5-sonnet
-const MODEL = 'anthropic/claude-sonnet-4-5';
+// Default model
+const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
 
-export async function generatePost(channel: any, sourceContent: string): Promise<string> {
+export async function generatePost(channel: any, sourceContent: string, model?: string): Promise<string> {
   const prompt = `Ты опытный контент-менеджер Telegram-канала.
 
 == ПРОФИЛЬ КАНАЛА ==
@@ -37,7 +37,7 @@ ${sourceContent.slice(0, 3000)}
 Верни ТОЛЬКО текст поста, без объяснений.`;
 
   const response = await openai.chat.completions.create({
-    model: MODEL,
+    model: model || DEFAULT_MODEL,
     max_tokens: 1024,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -45,7 +45,7 @@ ${sourceContent.slice(0, 3000)}
   return response.choices[0].message.content || '';
 }
 
-export async function generateImagePrompt(postText: string): Promise<string> {
+export async function generateImagePrompt(postText: string, model?: string): Promise<string> {
   const prompt = `Напиши промпт на английском языке для генерации картинки к этому посту.
 Промпт должен быть коротким, описывать визуальные детали, стиль и атмосферу.
 Верни ТОЛЬКО текст промпта, без объяснений.
@@ -54,7 +54,7 @@ export async function generateImagePrompt(postText: string): Promise<string> {
 ${postText}`;
 
   const response = await openai.chat.completions.create({
-    model: MODEL,
+    model: model || DEFAULT_MODEL,
     max_tokens: 256,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -62,7 +62,7 @@ ${postText}`;
   return response.choices[0].message.content || '';
 }
 
-export async function regeneratePost(channel: any, oldPostText: string, feedback: string): Promise<string> {
+export async function regeneratePost(channel: any, oldPostText: string, feedback: string, model?: string): Promise<string> {
   const prompt = `Ты опытный контент-менеджер Telegram-канала.
 
 == ПРОФИЛЬ КАНАЛА ==
@@ -83,7 +83,7 @@ ${feedback}
 Верни ТОЛЬКО текст поста, без объяснений.`;
 
   const response = await openai.chat.completions.create({
-    model: MODEL,
+    model: model || DEFAULT_MODEL,
     max_tokens: 1024,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -91,7 +91,7 @@ ${feedback}
   return response.choices[0].message.content || '';
 }
 
-export async function generateSlidesStructure(productData: string): Promise<any[]> {
+export async function generateSlidesStructure(productData: string, model?: string): Promise<any[]> {
   const prompt = `Создай структуру презентации для продукта.
 Данные: ${productData}
 Верни ТОЛЬКО валидный JSON массив объектов SlideData.
@@ -108,7 +108,7 @@ export async function generateSlidesStructure(productData: string): Promise<any[
 }`;
 
   const response = await openai.chat.completions.create({
-    model: MODEL,
+    model: model || DEFAULT_MODEL,
     max_tokens: 2048,
     messages: [{ role: 'user', content: prompt }],
   });
