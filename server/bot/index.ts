@@ -11,10 +11,13 @@ bot.start(async (ctx) => {
     const telegramId = ctx.from.id.toString();
     const username = ctx.from.username;
 
+    console.log(`[Bot] /start from user ${telegramId}`);
+
     try {
       const [existingUser] = await db.select().from(users).where(eq(users.telegramId, telegramId));
       if (!existingUser) {
         await db.insert(users).values({ telegramId, username } as any);
+        console.log(`[Bot] New user registered: ${telegramId}`);
       }
     } catch (dbError) {
       console.error('[Bot] DB error in /start:', dbError);
@@ -113,23 +116,66 @@ bot.on('text', async (ctx) => {
   }
 });
 
+export function setupWebhook(app: any, domain: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.warn('[Bot] TELEGRAM_BOT_TOKEN не установлен, webhook не настроен');
+    return;
+  }
+
+  const webhookPath = `/bot${token}`;
+  const webhookUrl = `https://${domain}${webhookPath}`;
+  
+  console.log('[Bot] Настройка webhook:', webhookUrl);
+  
+  // Set webhook
+  bot.telegram.setWebhook(webhookUrl).then(() => {
+    console.log('[Bot] Webhook установлен:', webhookUrl);
+  }).catch((err: any) => {
+    console.error('[Bot] Ошибка установки webhook:', err.message || err);
+    // Fallback to polling
+    startBot();
+  });
+  
+  // Handle webhook requests
+  app.post(webhookPath, (req: any, res: any) => {
+    bot.handleUpdate(req.body, res);
+  });
+  
+  console.log('[Bot] Webhook endpoint зарегистрирован:', webhookPath);
+}
+
 export function startBot() {
-  if (!process.env.TELEGRAM_BOT_TOKEN) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  
+  if (!token) {
     console.warn('[Bot] TELEGRAM_BOT_TOKEN не установлен, бот не запущен');
     return;
   }
   
-  console.log('[Bot] Запуск Telegram бота...');
+  console.log('[Bot] Запуск Telegram бота через long polling...');
   
-  bot.launch({
-    allowedUpdates: ['message', 'callback_query'],
-  }).then(() => {
-    console.log('[Bot] Telegram бот запущен успешно');
+  // Delete webhook first to ensure polling works
+  bot.telegram.deleteWebhook().then(() => {
+    bot.launch({
+      allowedUpdates: ['message', 'callback_query'],
+    }).then(() => {
+      console.log('[Bot] Telegram бот остановлен');
+    }).catch((err: any) => {
+      console.error('[Bot] Ошибка запуска бота:', err.message || err);
+    });
+    console.log('[Bot] Long polling запущен успешно');
   }).catch((err: any) => {
-    console.error('[Bot] Ошибка запуска бота:', err.message || err);
+    console.error('[Bot] Ошибка удаления webhook:', err.message || err);
   });
 
   // Enable graceful stop
-  process.once('SIGINT', () => bot.stop('SIGINT'));
-  process.once('SIGTERM', () => bot.stop('SIGTERM'));
+  process.once('SIGINT', () => {
+    console.log('[Bot] Получен SIGINT, останавливаем бота...');
+    bot.stop('SIGINT');
+  });
+  process.once('SIGTERM', () => {
+    console.log('[Bot] Получен SIGTERM, останавливаем бота...');
+    bot.stop('SIGTERM');
+  });
 }

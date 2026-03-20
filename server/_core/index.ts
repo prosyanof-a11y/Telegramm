@@ -6,7 +6,7 @@ import { channelsRouter } from '../api/routers/channels.js';
 import { postsRouter } from '../api/routers/posts.js';
 import { analyticsRouter } from '../api/routers/analytics.js';
 import { documentsRouter } from '../api/routers/documents.js';
-import { startBot } from '../bot/index.js';
+import { startBot, setupWebhook } from '../bot/index.js';
 import { startScheduler } from '../bot/scheduler.js';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -51,6 +51,14 @@ const port = process.env.PORT || 3000;
 
 app.listen(port, () => {
   console.log(`[Server] Сервер запущен на порту ${port}`);
-  startBot();
+  
+  // Setup webhook if RAILWAY_PUBLIC_DOMAIN is available, otherwise use polling
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  if (railwayDomain) {
+    setupWebhook(app, railwayDomain);
+  } else {
+    startBot();
+  }
+  
   startScheduler();
 });
