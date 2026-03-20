@@ -3,6 +3,12 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Configure fal client with the correct API key
+// Railway has FAL_API_KEY, but fal expects FAL_KEY
+fal.config({
+  credentials: process.env.FAL_KEY || process.env.FAL_API_KEY,
+});
+
 export async function generateImage(prompt: string, retries = 3): Promise<string> {
   for (let i = 0; i < retries; i++) {
     try {
