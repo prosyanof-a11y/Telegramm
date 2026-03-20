@@ -4,6 +4,3 @@ buildCommand = "npm run build"
 
 [deploy]
 startCommand = "npm start"
-
-[environment]
-NODE_VERSION = "20"
