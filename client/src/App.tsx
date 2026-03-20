@@ -17,7 +17,7 @@ function App() {
     trpc.createClient({
       links: [
         httpBatchLink({
-          url: 'http://localhost:3000/trpc',
+          url: '/trpc',
           headers() {
             return {
               'x-telegram-id': '123456789', // Mock user ID for development
