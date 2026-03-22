@@ -18,6 +18,7 @@ type WizardState =
   | { type: 'add_channel'; step: number; data: Record<string, any> }
   | { type: 'generate'; step: 1 }
   | { type: 'generate'; step: 2; channelId: string }
+  | { type: 'generate'; step: 'awaiting_text'; channelId: string }
   | { type: 'presentation'; step: 1 }
   | { type: 'presentation'; step: 2; channelId: string };
 
@@ -116,40 +117,99 @@ bot.hears('➕ Добавить канал', async (ctx) => {
 bot.hears('✍️ Создать пост', async (ctx) => {
   try {
     if (!ctx.from) return;
-    const user = await getOrCreateUser(ctx.from.id.toString(), ctx.from.username);
-    const list = await getUserChannels(user.id);
+    clearState(ctx.from.id);
 
-    if (list.length === 0) {
-      return ctx.reply('Сначала добавь канал через "➕ Добавить канал".');
+    const channelList = await db.select().from(channels).where(eq(channels.active, true));
+
+    if (!channelList.length) {
+      return ctx.reply(
+        'Каналов пока нет. Сначала добавь канал.',
+        Markup.keyboard([['➕ Добавить канал']]).resize()
+      );
     }
 
     state.set(ctx.from.id, { type: 'generate', step: 1 });
 
-    const buttons = list.map((c: any) =>
-      [Markup.button.callback(c.name, `gen_chan_${c.id}`)]
-    );
-
     await ctx.reply(
       '✍️ *Создание поста*\n\nДля какого канала генерировать?',
-      { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard(
+          channelList.map((c: any) => [Markup.button.callback(c.name, `gen_channel:${c.id}`)])
+        ),
+      }
     );
   } catch (err) {
     console.error('[Bot] generate start error:', err);
   }
 });
 
-bot.action(/gen_chan_(.+)/, async (ctx) => {
+bot.action(/^gen_channel:(.+)$/, async (ctx) => {
   if (!ctx.from) return;
   const channelId = ctx.match[1];
   state.set(ctx.from.id, { type: 'generate', step: 2, channelId });
   await ctx.answerCbQuery();
-  await ctx.editMessageReplyMarkup(undefined);
-  await ctx.reply(
-    '📝 Отправь исходный материал для поста:\n\n' +
-    '• Напиши текст, тезисы или тему\n' +
-    '• Или отправь файл (PDF, DOCX, TXT)\n\n' +
-    'Для отмены — /cancel'
+  await ctx.editMessageText(
+    'Источник материала для поста:',
+    Markup.inlineKeyboard([
+      [Markup.button.callback('✍️ Ввести текст', `gen_text:${channelId}`)],
+      [Markup.button.callback('🚀 Авто по профилю канала', `gen_auto:${channelId}`)],
+      [Markup.button.callback('📁 Из загруженных файлов', `gen_docs:${channelId}`)],
+    ])
   );
+});
+
+bot.action(/^gen_text:(.+)$/, async (ctx) => {
+  if (!ctx.from) return;
+  const channelId = ctx.match[1];
+  state.set(ctx.from.id, { type: 'generate', step: 'awaiting_text', channelId });
+  await ctx.answerCbQuery();
+  await ctx.editMessageReplyMarkup(undefined);
+  await ctx.reply('📝 Напиши или вставь исходный материал для поста:\n\nДля отмены — /cancel');
+});
+
+bot.action(/^gen_auto:(.+)$/, async (ctx) => {
+  try {
+    if (!ctx.from) return;
+    const channelId = ctx.match[1];
+    await ctx.answerCbQuery('Генерирую...');
+    await ctx.editMessageReplyMarkup(undefined);
+    clearState(ctx.from.id);
+
+    const [channel] = await db.select().from(channels).where(eq(channels.id, channelId));
+    if (!channel) return ctx.reply('Канал не найден.');
+
+    await ctx.reply('⏳ Генерирую пост по профилю канала...');
+    const autoSource = `Канал: ${channel.name}. Ниша: ${channel.niche}. Продукт: ${channel.productDescription}`;
+    await handleGenerateSource(ctx, channelId, autoSource);
+  } catch (err) {
+    console.error('[Bot] gen_auto error:', err);
+    await ctx.reply('Ошибка при генерации.');
+  }
+});
+
+bot.action(/^gen_docs:(.+)$/, async (ctx) => {
+  try {
+    if (!ctx.from) return;
+    const channelId = ctx.match[1];
+    await ctx.answerCbQuery();
+
+    const docList = await db.select().from(documents).where(eq(documents.channelId, channelId));
+    if (!docList.length) {
+      await ctx.editMessageText('У этого канала нет загруженных документов.\nСначала загрузи файл через "📁 Загрузить файл".');
+      return;
+    }
+
+    await ctx.editMessageText(
+      'Выбери документ:',
+      Markup.inlineKeyboard(
+        docList.map((d: any) => [Markup.button.callback(d.filename, `doc_post_${d.id}`)])
+      )
+    );
+  } catch (err) {
+    console.error('[Bot] gen_docs error:', err);
+    await ctx.reply('Ошибка при загрузке документов.');
+  }
 });
 
 // ── ⏳ Очередь ────────────────────────────────────────────────────────────────
@@ -373,9 +433,9 @@ bot.on(message('document'), async (ctx) => {
     const filename = doc.file_name ?? 'file';
     const ext = filename.split('.').pop()?.toLowerCase();
 
-    // Accept in generate wizard too (step 2)
-    const isUploadWizard  = s?.type === 'upload' && s.step === 1;
-    const isGenerateWizard = s?.type === 'generate' && s.step === 2;
+    // Accept in generate wizard too (step 2 or awaiting_text)
+    const isUploadWizard   = s?.type === 'upload' && s.step === 1;
+    const isGenerateWizard = s?.type === 'generate' && (s.step === 2 || s.step === 'awaiting_text');
 
     if (!isUploadWizard && !isGenerateWizard) {
       return ctx.reply('Для загрузки файла нажми "📁 Загрузить файл" или "✍️ Создать пост".');
@@ -396,8 +456,7 @@ bot.on(message('document'), async (ctx) => {
       return ctx.reply('Файл пустой или не удалось извлечь текст.');
     }
 
-    if (isGenerateWizard && s.type === 'generate' && s.step === 2) {
-      // Continue generate wizard with file content
+    if (isGenerateWizard && s.type === 'generate' && (s.step === 2 || s.step === 'awaiting_text')) {
       await handleGenerateSource(ctx, s.channelId, content);
       return;
     }
@@ -566,7 +625,13 @@ bot.on(message('text'), async (ctx) => {
     const s = state.get(ctx.from.id);
     const text = ctx.message.text;
 
-    // ── generate wizard step 2 ──
+    // ── generate: awaiting manual text input ──
+    if (s?.type === 'generate' && s.step === 'awaiting_text') {
+      await handleGenerateSource(ctx, s.channelId, text);
+      return;
+    }
+
+    // ── generate wizard step 2 (file path, legacy) ──
     if (s?.type === 'generate' && s.step === 2) {
       await handleGenerateSource(ctx, s.channelId, text);
       return;
