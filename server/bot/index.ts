@@ -862,9 +862,13 @@ bot.action(/save_channel_(\d+)/, async (ctx) => {
       `После этого нажми "✍️ Создать пост" для первого поста.`,
       { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error('[Bot] save_channel error:', err);
-    await ctx.reply('Ошибка при сохранении канала.');
+    await ctx.reply(
+      `❌ Ошибка сохранения: ${err.message}
+
+Попробуй снова: /start → ➕ Добавить канал`
+    );
   }
 });
 
@@ -913,6 +917,14 @@ export function setupWebhook(app: any, domain: string) {
 export async function startBot() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) { console.warn('[Bot] TELEGRAM_BOT_TOKEN не установлен, бот не запущен'); return; }
+
+  try {
+    await db.select().from(channels).limit(1);
+    console.log('[DB] Таблица channels доступна');
+  } catch (err: any) {
+    console.error('[DB] Таблица channels недоступна:', err.message);
+    console.error('[DB] Нужно выполнить миграции: pnpm db:push');
+  }
 
   console.log('[Bot] Запуск Telegram бота через long polling...');
   await bot.telegram.deleteWebhook();
