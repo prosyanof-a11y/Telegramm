@@ -5,7 +5,8 @@ import { bot } from '../services/telegram.js';
 import { db } from '../db/index.js';
 import { users, channels, posts, documents, schedules } from '../db/schema.js';
 import { eq, desc, and } from 'drizzle-orm';
-import { createPresentation } from '../services/figma.js';
+import { createPresentation, exportByUrl as figmaExportByUrl } from '../services/figma.js';
+import { createPresentationInCanva, exportByUrl as canvaExportByUrl } from '../services/canva.js';
 import { generatePost, generateImagePrompt, regeneratePost, generateSlidesStructure } from '../services/claude.js';
 import { generateImage } from '../services/flux.js';
 import { parseFile } from '../services/fileParser.js';
@@ -165,17 +166,21 @@ bot.action(/ch_settings_(.+)/, async (ctx) => {
 });
 
 bot.action(/ch_pause_(.+)/, async (ctx) => {
-  await db.update(channels).set({ active: false } as any).where(eq(channels.id, ctx.match[1]));
-  await ctx.answerCbQuery('Канал на паузе ⏸');
-  await ctx.editMessageReplyMarkup(undefined);
-  await ctx.reply('Канал поставлен на паузу.');
+  try {
+    await db.update(channels).set({ active: false } as any).where(eq(channels.id, ctx.match[1]));
+    await ctx.answerCbQuery('Канал на паузе ⏸');
+    await ctx.editMessageReplyMarkup(undefined);
+    await ctx.reply('Канал поставлен на паузу.');
+  } catch (err) { console.error('[Bot] ch_pause error:', err); await ctx.answerCbQuery('Ошибка'); }
 });
 
 bot.action(/ch_resume_(.+)/, async (ctx) => {
-  await db.update(channels).set({ active: true } as any).where(eq(channels.id, ctx.match[1]));
-  await ctx.answerCbQuery('Канал активирован ▶️');
-  await ctx.editMessageReplyMarkup(undefined);
-  await ctx.reply('Канал снова активен.');
+  try {
+    await db.update(channels).set({ active: true } as any).where(eq(channels.id, ctx.match[1]));
+    await ctx.answerCbQuery('Канал активирован ▶️');
+    await ctx.editMessageReplyMarkup(undefined);
+    await ctx.reply('Канал снова активен.');
+  } catch (err) { console.error('[Bot] ch_resume error:', err); await ctx.answerCbQuery('Ошибка'); }
 });
 
 bot.action(/ch_delete_(.+)/, async (ctx) => {
@@ -578,7 +583,7 @@ bot.on(message('document'), async (ctx) => {
 
     await ctx.reply('⏳ Читаю файл...');
     const fileLink = await ctx.telegram.getFileLink(doc.file_id);
-    const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
+    const response = await axios.get(fileLink.href, { responseType: 'arraybuffer', timeout: 30000 });
     const content = await parseFile(Buffer.from(response.data), filename);
 
     if (!content.trim()) return ctx.reply('Файл пустой или не удалось извлечь текст.');
@@ -752,9 +757,18 @@ bot.on(message('text'), async (ctx) => {
       clearState(ctx.from.id);
       await ctx.reply('⏳ Генерирую структуру презентации...');
       const slides = await generateSlidesStructure(text);
-      await ctx.reply('🎨 Создаю презентацию в Figma...');
-      const url = await createPresentation(slides);
-      await ctx.reply(`✅ Презентация готова:\n${url}`, MAIN_KEYBOARD);
+
+      let presentationUrl: string;
+      try {
+        await ctx.reply('🎨 Создаю презентацию в Figma...');
+        presentationUrl = await createPresentation(slides);
+      } catch (figmaErr: any) {
+        console.warn('[Bot] Figma failed, falling back to Canva:', figmaErr.message);
+        await ctx.reply('⚠️ Figma недоступна, пробую Canva...');
+        presentationUrl = await createPresentationInCanva(slides);
+      }
+
+      await ctx.reply(`✅ Презентация готова:\n${presentationUrl}`, MAIN_KEYBOARD);
       return;
     }
 
@@ -884,12 +898,146 @@ bot.action(/restart_channel_(\d+)/, async (ctx) => {
   );
 });
 
+// ── /figma [url] — загрузить презентацию из Figma ────────────────────────────
+
+bot.command('figma', async (ctx) => {
+  const args = ctx.message.text.split(' ').slice(1);
+  const figmaUrl = args[0];
+
+  if (!figmaUrl) {
+    return ctx.reply(
+      '📐 *Использование:* /figma [ссылка]\n\n' +
+      'Пример:\n`/figma https://www.figma.com/design/XXXX/Title`\n\n' +
+      'Бот скачает все фреймы файла и отправит их как изображения.',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  if (!figmaUrl.includes('figma.com')) {
+    return ctx.reply('❌ Некорректная ссылка. Нужна ссылка на файл figma.com');
+  }
+
+  const loadingMsg = await ctx.reply('⏳ Загружаю файл из Figma...');
+
+  try {
+    const result = await figmaExportByUrl(figmaUrl);
+
+    await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(() => {});
+
+    if (!result.frameImages.length) {
+      return ctx.reply(
+        `📐 *${result.fileName}*\n\n` +
+        `Фреймы не найдены. Убедись, что файл содержит фреймы на первой странице.\n\n` +
+        `🔗 Файл: ${figmaUrl}`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    await ctx.reply(`📐 *${result.fileName}*\n${result.frameImages.length} фреймов`, { parse_mode: 'Markdown' });
+
+    // Отправляем фреймы группами по 10
+    const chunks: typeof result.frameImages[] = [];
+    for (let i = 0; i < result.frameImages.length; i += 10) {
+      chunks.push(result.frameImages.slice(i, i + 10));
+    }
+
+    for (const chunk of chunks) {
+      if (chunk.length === 1) {
+        await ctx.replyWithPhoto(chunk[0].url, { caption: chunk[0].name });
+      } else {
+        await ctx.replyWithMediaGroup(
+          chunk.map((f, idx) => ({
+            type: 'photo' as const,
+            media: f.url,
+            caption: idx === 0 ? f.name : undefined,
+          }))
+        );
+      }
+    }
+  } catch (err: any) {
+    await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(() => {});
+    console.error('[Bot] /figma error:', err.message);
+
+    if (err.message?.includes('FIGMA_TOKEN')) {
+      return ctx.reply(
+        '❌ FIGMA_TOKEN не задан.\n\n' +
+        'Получи токен: figma.com → Settings → Security → Personal access tokens\n' +
+        'Добавь в .env: `FIGMA_TOKEN=your_token`',
+        { parse_mode: 'Markdown' }
+      );
+    }
+    await ctx.reply(`❌ Ошибка загрузки из Figma: ${err.message}`);
+  }
+});
+
+// ── /canva [url] — загрузить дизайн из Canva ─────────────────────────────────
+
+bot.command('canva', async (ctx) => {
+  const args = ctx.message.text.split(' ').slice(1);
+  const canvaUrl = args[0];
+
+  if (!canvaUrl) {
+    return ctx.reply(
+      '🎨 *Использование:* /canva [ссылка]\n\n' +
+      'Пример:\n`/canva https://www.canva.com/design/DAFxxx.../view`\n\n' +
+      'Бот загрузит дизайн и экспортирует его как изображение.',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  if (!canvaUrl.includes('canva.com')) {
+    return ctx.reply('❌ Некорректная ссылка. Нужна ссылка на дизайн canva.com');
+  }
+
+  const loadingMsg = await ctx.reply('⏳ Загружаю дизайн из Canva...');
+
+  try {
+    const result = await canvaExportByUrl(canvaUrl);
+
+    await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(() => {});
+
+    if (result.exportUrl) {
+      await ctx.replyWithPhoto(result.exportUrl, {
+        caption: `🎨 *${result.title}*\n\n✏️ Редактировать: ${result.editUrl}`,
+        parse_mode: 'Markdown',
+      });
+    } else {
+      await ctx.reply(
+        `🎨 *${result.title}*\n\n` +
+        `✏️ Редактировать: ${result.editUrl}\n` +
+        `👁 Просмотр: ${result.viewUrl}`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+  } catch (err: any) {
+    await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(() => {});
+    console.error('[Bot] /canva error:', err.message);
+
+    if (err.message?.includes('CANVA_CLIENT_ID')) {
+      return ctx.reply(
+        '❌ CANVA_CLIENT_ID / CANVA_CLIENT_SECRET не заданы.\n\n' +
+        'Получи ключи: canva.com/developers → Create App\n' +
+        'Добавь в .env:\n`CANVA_CLIENT_ID=xxx`\n`CANVA_CLIENT_SECRET=xxx`',
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    // Fallback: предложить Figma
+    await ctx.reply(
+      `❌ Ошибка загрузки из Canva: ${err.message}\n\n` +
+      `Попробуй /figma [ссылка] если у тебя есть Figma-файл.`
+    );
+  }
+});
+
 // ── Bot lifecycle ─────────────────────────────────────────────────────────────
 
 const BOT_COMMANDS = [
   { command: 'start',        description: 'Главное меню' },
   { command: 'cancel',       description: 'Отменить текущее действие' },
-  { command: 'presentation', description: 'Создать презентацию в Figma' },
+  { command: 'presentation', description: 'Создать презентацию (AI)' },
+  { command: 'figma',        description: 'Загрузить файл из Figma по ссылке' },
+  { command: 'canva',        description: 'Загрузить дизайн из Canva по ссылке' },
 ];
 
 export function setupWebhook(app: any, domain: string) {

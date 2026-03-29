@@ -6,13 +6,23 @@ export async function parseFile(buffer: Buffer, filename: string): Promise<strin
   const ext = filename.split('.').pop()?.toLowerCase();
 
   if (ext === 'pdf') {
-    const data = await pdfParse(buffer);
-    return data.text;
+    try {
+      const data = await pdfParse(buffer);
+      return data.text;
+    } catch (err: any) {
+      console.error('[FileParser] PDF parse error:', err.message);
+      throw new Error(`Ошибка разбора PDF: ${err.message}`);
+    }
   }
 
   if (ext === 'docx') {
-    const result = await mammoth.extractRawText({ buffer });
-    return result.value;
+    try {
+      const result = await mammoth.extractRawText({ buffer });
+      return result.value;
+    } catch (err: any) {
+      console.error('[FileParser] DOCX parse error:', err.message);
+      throw new Error(`Ошибка разбора DOCX: ${err.message}`);
+    }
   }
 
   if (ext === 'txt') {
@@ -24,12 +34,12 @@ export async function parseFile(buffer: Buffer, filename: string): Promise<strin
 
 export async function parseUrl(url: string): Promise<string> {
   try {
-    const response = await axios.get(url);
-    // Basic HTML stripping, in a real app use cheerio or similar
+    const response = await axios.get(url, { timeout: 30000 });
+    // Basic HTML stripping
     const text = response.data.replace(/<[^>]*>?/gm, ' ');
     return text;
-  } catch (error) {
-    console.error('Error parsing URL:', error);
-    throw new Error('Failed to parse URL');
+  } catch (error: any) {
+    console.error('[FileParser] parseUrl error:', error.message || error);
+    throw new Error(`Failed to parse URL: ${error.message}`);
   }
 }
