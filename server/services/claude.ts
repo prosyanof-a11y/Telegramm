@@ -16,9 +16,6 @@ const openai = new OpenAI({
 // Default model
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
 
-// Maximum post length (Telegram hard limit is 4096)
-export const MAX_POST_LENGTH = 4000;
-
 export async function generatePost(channel: any, sourceContent: string, model?: string): Promise<string> {
   const prompt = `Ты опытный контент-менеджер Telegram-канала.
 
@@ -47,8 +44,7 @@ ${sourceContent.slice(0, 6000)}
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.choices[0].message.content || '';
-    return text.slice(0, MAX_POST_LENGTH);
+    return response.choices[0].message.content || '';
   } catch (err: any) {
     console.error('[Claude] generatePost error:', err.message || err);
     throw new Error(`Ошибка генерации поста: ${err.message}`);
@@ -104,8 +100,7 @@ ${feedback}
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.choices[0].message.content || '';
-    return text.slice(0, MAX_POST_LENGTH);
+    return response.choices[0].message.content || '';
   } catch (err: any) {
     console.error('[Claude] regeneratePost error:', err.message || err);
     throw new Error(`Ошибка регенерации поста: ${err.message}`);
@@ -141,4 +136,25 @@ export async function generateSlidesStructure(productData: string, model?: strin
     console.error('[Claude] generateSlidesStructure error:', err.message || err);
     throw new Error(`Ошибка генерации структуры слайдов: ${err.message}`);
   }
+}
+
+/** Split text into as many parts as needed, each within Telegram's 4096-char limit */
+export function splitMessage(text: string, maxLen = 4096): string[] {
+  const parts: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLen) {
+      parts.push(remaining);
+      break;
+    }
+    const cutoff = maxLen;
+    const splitAt =
+      remaining.lastIndexOf('\n\n', cutoff) > 0 ? remaining.lastIndexOf('\n\n', cutoff) :
+      remaining.lastIndexOf('\n', cutoff)   > 0 ? remaining.lastIndexOf('\n', cutoff) :
+      remaining.lastIndexOf(' ', cutoff)    > 0 ? remaining.lastIndexOf(' ', cutoff) :
+      cutoff;
+    parts.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+  return parts;
 }

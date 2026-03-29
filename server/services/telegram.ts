@@ -1,6 +1,6 @@
 import { Telegraf } from 'telegraf';
 import dotenv from 'dotenv';
-import { MAX_POST_LENGTH } from './claude.js';
+import { splitMessage } from './claude.js';
 
 dotenv.config();
 
@@ -14,21 +14,22 @@ export const bot = new Telegraf(botToken || 'placeholder_token_will_not_work', {
 export async function publishPost(channelId: string, text: string, imageUrl?: string | null): Promise<string> {
   if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN is not set');
 
-  // Enforce Telegram's 4096 char limit (using our 4000 constant)
-  const safeText = text.slice(0, MAX_POST_LENGTH);
-
   try {
+    const parts = splitMessage(text);
     let message;
     if (imageUrl) {
-      // Caption limit is 1024 for photos — fall back to text message if too long
-      if (safeText.length > 1024) {
+      // Caption limit for photos is 1024 — send photo without caption, then text as messages
+      if (parts[0].length > 1024) {
         await bot.telegram.sendPhoto(channelId, imageUrl);
-        message = await bot.telegram.sendMessage(channelId, safeText, { parse_mode: 'HTML' });
+        message = await bot.telegram.sendMessage(channelId, parts[0], { parse_mode: 'HTML' });
       } else {
-        message = await bot.telegram.sendPhoto(channelId, imageUrl, { caption: safeText, parse_mode: 'HTML' });
+        message = await bot.telegram.sendPhoto(channelId, imageUrl, { caption: parts[0], parse_mode: 'HTML' });
       }
     } else {
-      message = await bot.telegram.sendMessage(channelId, safeText, { parse_mode: 'HTML' });
+      message = await bot.telegram.sendMessage(channelId, parts[0], { parse_mode: 'HTML' });
+    }
+    for (let i = 1; i < parts.length; i++) {
+      await bot.telegram.sendMessage(channelId, parts[i], { parse_mode: 'HTML' });
     }
     return message.message_id.toString();
   } catch (error: any) {
