@@ -40,7 +40,7 @@ ${sourceContent.slice(0, 6000)}
   try {
     const response = await openai.chat.completions.create({
       model: model || DEFAULT_MODEL,
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
     });
 
@@ -96,7 +96,7 @@ ${feedback}
   try {
     const response = await openai.chat.completions.create({
       model: model || DEFAULT_MODEL,
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
     });
 
@@ -126,7 +126,7 @@ export async function generateSlidesStructure(productData: string, model?: strin
   try {
     const response = await openai.chat.completions.create({
       model: model || DEFAULT_MODEL,
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
     });
 
