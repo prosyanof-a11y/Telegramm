@@ -72,25 +72,32 @@ function approvalKeyboard(postId: string) {
 async function sendPostPreview(ctx: any, postId: string, channelName: string) {
   const [post] = await db.select().from(posts).where(eq(posts.id, postId));
   if (!post) return;
-  const header = `📢 *${channelName}*\n\n`;
-  const footer = post.imageUrl ? '\n\n🖼 Картинка прикреплена' : '';
-  const fullText = header + post.text + footer;
-  const parts = splitMessage(fullText, 4000);
+
+  // Заголовок отдельно (Markdown-safe), текст поста без parse_mode чтобы не крашить
+  await ctx.reply(`📢 *${escapeMarkdown(channelName)}*`, { parse_mode: 'Markdown' });
+
+  // Отправляем полный текст поста частями (без Markdown — текст от AI может содержать спецсимволы)
+  const parts = splitMessage(post.text, 4000);
 
   if (post.imageUrl) {
-    if (parts[0].length <= 1024) {
-      await ctx.replyWithPhoto(post.imageUrl, { caption: parts[0], parse_mode: 'Markdown' });
+    const firstPart = parts[0];
+    if (firstPart.length <= 1024) {
+      await ctx.replyWithPhoto(post.imageUrl, { caption: firstPart });
     } else {
       await ctx.replyWithPhoto(post.imageUrl);
-      await ctx.reply(parts[0], { parse_mode: 'Markdown' });
+      await ctx.reply(firstPart);
     }
   } else {
-    await ctx.reply(parts[0], { parse_mode: 'Markdown' });
+    await ctx.reply(parts[0]);
   }
   for (let i = 1; i < parts.length; i++) {
-    await ctx.reply(parts[i], { parse_mode: 'Markdown' });
+    await ctx.reply(parts[i]);
   }
   await ctx.reply(`📊 Длина поста: ${post.text.length} символов`, approvalKeyboard(postId));
+}
+
+function escapeMarkdown(text: string): string {
+  return text.replace(/([*_`\[\]])/g, '\\$1');
 }
 
 // ── /start ────────────────────────────────────────────────────────────────────
@@ -370,9 +377,8 @@ bot.hears('⏳ Очередь постов', async (ctx) => {
         : '';
 
       await ctx.reply(
-        `📢 *${chanName}*${scheduled}\n\n${preview}`,
+        `📢 ${chanName}${scheduled}\n\n${preview}`,
         {
-          parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
             [
               Markup.button.callback('✅ Одобрить', `approve_${post.id}`),
@@ -775,7 +781,12 @@ bot.on(message('text'), async (ctx) => {
         result = formatSlidesAsText(slides);
       }
 
-      await ctx.reply(`✅ Презентация готова:\n${result}`, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
+      // result может быть URL (Canva) или Markdown-текст (formatSlidesAsText)
+      try {
+        await ctx.reply(`✅ Презентация готова:\n${result}`, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
+      } catch {
+        await ctx.reply(`✅ Презентация готова:\n${result}`, MAIN_KEYBOARD);
+      }
       return;
     }
 
