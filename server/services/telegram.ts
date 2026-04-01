@@ -15,7 +15,9 @@ export async function publishPost(channelId: string, text: string, imageUrl?: st
   if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN is not set');
 
   try {
+    console.log('[4/5] Передано в Telegram символов:', text.length);
     const parts = splitMessage(text);
+    console.log('[4/5] Разбито на частей:', parts.length, '| длины:', parts.map(p => p.length));
     let message;
     if (imageUrl) {
       // Caption limit for photos is 1024 — send photo without caption, then text as messages

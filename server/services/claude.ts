@@ -10,7 +10,7 @@ const openai = new OpenAI({
     'HTTP-Referer': 'https://telegram-channel-manager.railway.app',
     'X-Title': 'Telegram Channel Manager',
   },
-  timeout: 30000, // 30 second timeout
+  timeout: 120000, // 120 second timeout — longer posts need more time
 });
 
 // Default model
@@ -30,21 +30,27 @@ export async function generatePost(channel: any, sourceContent: string, model?: 
 ${channel.exampleGoodPost}
 
 == ИСХОДНЫЙ МАТЕРИАЛ ==
-${sourceContent.slice(0, 6000)}
+${sourceContent.slice(0, 12000)}
 
 == ЗАДАЧА ==
-Напиши один Telegram-пост (200-4000 символов).
+Напиши один подробный Telegram-пост от 3500 до 4000 символов.
 Цель: продать или прогреть к покупке.
+Не сокращай. Пиши развёрнуто, до конца. Не обрывай текст.
 Верни ТОЛЬКО текст поста, без объяснений.`;
 
   try {
+    console.log('[1/5] Отправка в API, промпт символов:', prompt.length);
     const response = await openai.chat.completions.create({
       model: model || DEFAULT_MODEL,
       max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
     });
 
-    return response.choices[0].message.content || '';
+    const generatedText = response.choices[0].message.content || '';
+    console.log('[2/5] Сгенерировано символов:', generatedText.length);
+    console.log('[2/5] Stop reason:', response.choices[0].finish_reason);
+    console.log('[2/5] Output tokens:', response.usage?.completion_tokens);
+    return generatedText;
   } catch (err: any) {
     console.error('[Claude] generatePost error:', err.message || err);
     throw new Error(`Ошибка генерации поста: ${err.message}`);
@@ -90,7 +96,8 @@ ${oldPostText}
 ${feedback}
 
 == ЗАДАЧА ==
-Перепиши пост с учетом замечаний. Максимум 4000 символов.
+Перепиши пост с учетом замечаний. Напиши подробный текст от 3500 до 4000 символов.
+Не сокращай. Пиши развёрнуто, до конца. Не обрывай текст.
 Верни ТОЛЬКО текст поста, без объяснений.`;
 
   try {

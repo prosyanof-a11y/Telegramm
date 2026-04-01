@@ -7,7 +7,7 @@ import { users, channels, posts, documents, schedules } from '../db/schema.js';
 import { eq, desc, and } from 'drizzle-orm';
 import { createPresentation, exportByUrl as figmaExportByUrl } from '../services/figma.js';
 import { createPresentationInCanva, exportByUrl as canvaExportByUrl } from '../services/canva.js';
-import { generatePost, generateImagePrompt, regeneratePost, generateSlidesStructure } from '../services/claude.js';
+import { generatePost, generateImagePrompt, regeneratePost, generateSlidesStructure, splitMessage } from '../services/claude.js';
 import { generateImage } from '../services/flux.js';
 import { parseFile } from '../services/fileParser.js';
 import { publishPost, notifyAdmin } from '../services/telegram.js';
@@ -72,20 +72,25 @@ function approvalKeyboard(postId: string) {
 async function sendPostPreview(ctx: any, postId: string, channelName: string) {
   const [post] = await db.select().from(posts).where(eq(posts.id, postId));
   if (!post) return;
-  const preview = post.text.slice(0, 500) + (post.text.length > 500 ? '…' : '');
-  const caption =
-    `📢 *${channelName}*\n\n${preview}` +
-    (post.imageUrl ? '\n\n🖼 Картинка прикреплена' : '');
+  const header = `📢 *${channelName}*\n\n`;
+  const footer = post.imageUrl ? '\n\n🖼 Картинка прикреплена' : '';
+  const fullText = header + post.text + footer;
+  const parts = splitMessage(fullText, 4000);
 
   if (post.imageUrl) {
-    await ctx.replyWithPhoto(post.imageUrl, {
-      caption,
-      parse_mode: 'Markdown',
-      ...approvalKeyboard(postId),
-    });
+    if (parts[0].length <= 1024) {
+      await ctx.replyWithPhoto(post.imageUrl, { caption: parts[0], parse_mode: 'Markdown' });
+    } else {
+      await ctx.replyWithPhoto(post.imageUrl);
+      await ctx.reply(parts[0], { parse_mode: 'Markdown' });
+    }
   } else {
-    await ctx.reply(caption, { parse_mode: 'Markdown', ...approvalKeyboard(postId) });
+    await ctx.reply(parts[0], { parse_mode: 'Markdown' });
   }
+  for (let i = 1; i < parts.length; i++) {
+    await ctx.reply(parts[i], { parse_mode: 'Markdown' });
+  }
+  await ctx.reply(`📊 Длина поста: ${post.text.length} символов`, approvalKeyboard(postId));
 }
 
 // ── /start ────────────────────────────────────────────────────────────────────
@@ -678,6 +683,7 @@ async function handleGenerateSource(ctx: any, channelId: string, sourceContent: 
   clearState(ctx.from.id);
   await ctx.reply('⏳ Генерирую пост...');
   const text = await generatePost(channel, sourceContent);
+  console.log('[3/5] Сохраняется в БД символов:', text.length);
 
   let imageUrl: string | null = null;
   if (process.env.FAL_API_KEY) {
