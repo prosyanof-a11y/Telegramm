@@ -5,7 +5,7 @@ import { bot } from '../services/telegram.js';
 import { db } from '../db/index.js';
 import { users, channels, posts, documents, schedules } from '../db/schema.js';
 import { eq, desc, and } from 'drizzle-orm';
-import { createPresentation, exportByUrl as figmaExportByUrl } from '../services/figma.js';
+import { createPresentation, formatSlidesAsText, exportByUrl as figmaExportByUrl } from '../services/figma.js';
 import { createPresentationInCanva, exportByUrl as canvaExportByUrl } from '../services/canva.js';
 import { generatePost, generateImagePrompt, regeneratePost, generateSlidesStructure, splitMessage } from '../services/claude.js';
 import { generateImage } from '../services/flux.js';
@@ -764,17 +764,18 @@ bot.on(message('text'), async (ctx) => {
       await ctx.reply('⏳ Генерирую структуру презентации...');
       const slides = await generateSlidesStructure(text);
 
-      let presentationUrl: string;
+      // Figma REST API не поддерживает создание — пробуем Canva, потом текст
+      let result: string;
       try {
-        await ctx.reply('🎨 Создаю презентацию в Figma...');
-        presentationUrl = await createPresentation(slides);
-      } catch (figmaErr: any) {
-        console.warn('[Bot] Figma failed, falling back to Canva:', figmaErr.message);
-        await ctx.reply('⚠️ Figma недоступна, пробую Canva...');
-        presentationUrl = await createPresentationInCanva(slides);
+        await ctx.reply('🎨 Создаю презентацию в Canva...');
+        result = await createPresentationInCanva(slides);
+      } catch (canvaErr: any) {
+        console.warn('[Bot] Canva failed, returning text summary:', canvaErr.message);
+        await ctx.reply('⚠️ Canva недоступна, показываю текстовую структуру.');
+        result = formatSlidesAsText(slides);
       }
 
-      await ctx.reply(`✅ Презентация готова:\n${presentationUrl}`, MAIN_KEYBOARD);
+      await ctx.reply(`✅ Презентация готова:\n${result}`, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
       return;
     }
 
@@ -952,10 +953,10 @@ bot.command('figma', async (ctx) => {
         await ctx.replyWithPhoto(chunk[0].url, { caption: chunk[0].name });
       } else {
         await ctx.replyWithMediaGroup(
-          chunk.map((f, idx) => ({
+          chunk.map((f) => ({
             type: 'photo' as const,
             media: f.url,
-            caption: idx === 0 ? f.name : undefined,
+            caption: f.name,
           }))
         );
       }

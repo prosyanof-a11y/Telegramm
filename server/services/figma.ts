@@ -144,52 +144,66 @@ export async function exportByUrl(figmaUrl: string): Promise<FigmaExportResult> 
   const token = process.env.FIGMA_TOKEN;
   if (!token) throw new Error('FIGMA_TOKEN не задан в .env. Получи на figma.com → Settings → Security → Personal access tokens');
 
-  const info = await getFigmaFileInfo(figmaUrl);
+  // Получаем файл один раз (с depth: 2 — уже содержит имена фреймов)
+  const fileKey = figmaUrl.includes('figma.com') ? parseFigmaUrl(figmaUrl) : figmaUrl;
 
-  const maxFrames = 10; // Telegram не любит больше 10 медиа в группе
-  const frameIds = info.frameIds.slice(0, maxFrames);
+  const res = await axios.get(`${FIGMA_API}/files/${fileKey}`, {
+    headers: headers(),
+    params: { depth: 2 },
+    timeout: TIMEOUT,
+  });
+
+  const doc = res.data.document;
+  const firstPage = doc.children?.[0];
+
+  // Собираем фреймы с именами за один проход
+  const frames: Array<{ id: string; name: string }> = firstPage
+    ? (firstPage.children || [])
+        .filter((n: any) => n.type === 'FRAME' || n.type === 'COMPONENT')
+        .map((n: any) => ({ id: n.id, name: n.name }))
+    : [];
+
+  const maxFrames = 10;
+  const selectedFrames = frames.slice(0, maxFrames);
 
   let frameImages: Array<{ nodeId: string; name: string; url: string }> = [];
 
-  if (frameIds.length > 0) {
-    const exported = await exportFigmaFrames(info.key, frameIds, 'png', 1);
-
-    // Получить имена фреймов из файла (для подписей)
-    const fileRes = await axios.get(`${FIGMA_API}/files/${info.key}`, {
-      headers: headers(),
-      params: { depth: 2 },
-      timeout: TIMEOUT,
-    });
-    const firstPage = fileRes.data.document?.children?.[0];
-    const frameNameMap: Record<string, string> = {};
-    if (firstPage) {
-      for (const node of (firstPage.children || [])) {
-        frameNameMap[node.id] = node.name;
-      }
-    }
+  if (selectedFrames.length > 0) {
+    const exported = await exportFigmaFrames(fileKey, selectedFrames.map(f => f.id), 'png', 2);
+    const nameMap = Object.fromEntries(selectedFrames.map(f => [f.id, f.name]));
 
     frameImages = exported.map(({ nodeId, url }) => ({
       nodeId,
-      name: frameNameMap[nodeId] || nodeId,
+      name: nameMap[nodeId] || nodeId,
       url,
     }));
   }
 
-  console.log(`[Figma] Exported "${info.name}": ${frameImages.length} frames`);
+  console.log(`[Figma] Exported "${res.data.name}": ${frameImages.length} frames`);
   return {
-    fileKey: info.key,
-    fileName: info.name,
+    fileKey,
+    fileName: res.data.name,
     frameImages,
-    thumbnailUrl: info.thumbnailUrl,
+    thumbnailUrl: res.data.thumbnailUrl || '',
   };
 }
 
 /**
- * Используется в /presentation wizard — AI генерирует слайды, выводим как текст.
- * Figma REST API не поддерживает создание файлов без плагина.
+ * Figma REST API НЕ поддерживает создание файлов.
+ * Эта функция форматирует слайды как текстовое описание для Telegram.
+ * Для реального создания используй Canva (см. canva.ts).
  */
 export async function createPresentation(slides: SlideData[]): Promise<string> {
-  const summary = slides.map((s, i) => {
+  // Всегда бросаем ошибку, чтобы сработал fallback на Canva
+  // Figma REST API не позволяет создавать файлы программно
+  throw new Error('Figma REST API не поддерживает создание файлов. Используем Canva.');
+}
+
+/**
+ * Форматирует слайды как текстовое описание (fallback если ни Figma ни Canva недоступны)
+ */
+export function formatSlidesAsText(slides: SlideData[]): string {
+  return slides.map((s, i) => {
     const lines = [`📌 Слайд ${i + 1} — ${s.type.toUpperCase()}`];
     if (s.heading) lines.push(`*${s.heading}*`);
     if (s.subheading) lines.push(`_${s.subheading}_`);
@@ -197,9 +211,4 @@ export async function createPresentation(slides: SlideData[]): Promise<string> {
     if (s.points?.length) lines.push(s.points.map(p => `• ${p}`).join('\n'));
     return lines.join('\n');
   }).join('\n\n');
-
-  // Figma REST API не позволяет создавать файлы — отдаём текстовое описание
-  // Для реального создания нужен Figma Plugin или Canva (см. canva.ts)
-  console.log('[Figma] createPresentation: returning text summary (API limitation)');
-  return summary;
 }
