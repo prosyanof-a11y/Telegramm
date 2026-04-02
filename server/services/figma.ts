@@ -10,7 +10,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const FIGMA_API = 'https://api.figma.com/v1';
-const TIMEOUT = 30000;
+const TIMEOUT = 60000; // 60s — большие файлы Figma грузятся медленно
 
 export type SlideData = {
   type: 'title' | 'problem' | 'solution' | 'benefits' | 'price' | 'cta'
@@ -54,9 +54,10 @@ function headers() {
  * https://www.figma.com/file/XXXX/Title
  * https://www.figma.com/design/XXXX/Title
  * https://www.figma.com/proto/XXXX/Title
+ * https://www.figma.com/board/XXXX/Title
  */
 export function parseFigmaUrl(url: string): string {
-  const match = url.match(/figma\.com\/(?:file|design|proto)\/([a-zA-Z0-9]+)/);
+  const match = url.match(/figma\.com\/(?:file|design|proto|board)\/([a-zA-Z0-9_-]+)/);
   if (!match) throw new Error(`Не удалось извлечь ключ файла из ссылки: ${url}`);
   return match[1];
 }
@@ -144,48 +145,93 @@ export async function exportByUrl(figmaUrl: string): Promise<FigmaExportResult> 
   const token = process.env.FIGMA_TOKEN;
   if (!token) throw new Error('FIGMA_TOKEN не задан в .env. Получи на figma.com → Settings → Security → Personal access tokens');
 
-  // Получаем файл один раз (с depth: 2 — уже содержит имена фреймов)
   const fileKey = figmaUrl.includes('figma.com') ? parseFigmaUrl(figmaUrl) : figmaUrl;
+  console.log(`[Figma] exportByUrl: fileKey=${fileKey}`);
 
-  const res = await axios.get(`${FIGMA_API}/files/${fileKey}`, {
-    headers: headers(),
-    params: { depth: 2 },
-    timeout: TIMEOUT,
-  });
+  try {
+    const res = await axios.get(`${FIGMA_API}/files/${fileKey}`, {
+      headers: headers(),
+      params: { depth: 2 },
+      timeout: TIMEOUT,
+    });
 
-  const doc = res.data.document;
-  const firstPage = doc.children?.[0];
+    const doc = res.data.document;
+    const firstPage = doc.children?.[0];
 
-  // Собираем фреймы с именами за один проход
-  const frames: Array<{ id: string; name: string }> = firstPage
-    ? (firstPage.children || [])
-        .filter((n: any) => n.type === 'FRAME' || n.type === 'COMPONENT')
-        .map((n: any) => ({ id: n.id, name: n.name }))
-    : [];
+    // Собираем фреймы с именами за один проход
+    // Включаем также SECTION и GROUP для FigJam/board файлов
+    const frames: Array<{ id: string; name: string }> = firstPage
+      ? (firstPage.children || [])
+          .filter((n: any) => ['FRAME', 'COMPONENT', 'SECTION', 'GROUP'].includes(n.type))
+          .map((n: any) => ({ id: n.id, name: n.name }))
+      : [];
 
-  const maxFrames = 10;
-  const selectedFrames = frames.slice(0, maxFrames);
+    console.log(`[Figma] Found ${frames.length} frames in "${res.data.name}"`);
 
-  let frameImages: Array<{ nodeId: string; name: string; url: string }> = [];
+    const maxFrames = 10;
+    const selectedFrames = frames.slice(0, maxFrames);
 
-  if (selectedFrames.length > 0) {
-    const exported = await exportFigmaFrames(fileKey, selectedFrames.map(f => f.id), 'png', 2);
-    const nameMap = Object.fromEntries(selectedFrames.map(f => [f.id, f.name]));
+    let frameImages: Array<{ nodeId: string; name: string; url: string }> = [];
 
-    frameImages = exported.map(({ nodeId, url }) => ({
-      nodeId,
-      name: nameMap[nodeId] || nodeId,
-      url,
-    }));
+    if (selectedFrames.length > 0) {
+      const exported = await exportFigmaFrames(fileKey, selectedFrames.map(f => f.id), 'png', 2);
+      const nameMap = Object.fromEntries(selectedFrames.map(f => [f.id, f.name]));
+
+      frameImages = exported.map(({ nodeId, url }) => ({
+        nodeId,
+        name: nameMap[nodeId] || nodeId,
+        url,
+      }));
+    }
+
+    console.log(`[Figma] Exported "${res.data.name}": ${frameImages.length} frames`);
+    return {
+      fileKey,
+      fileName: res.data.name,
+      frameImages,
+      thumbnailUrl: res.data.thumbnailUrl || '',
+    };
+  } catch (err: any) {
+    const status = err.response?.status;
+    const body = err.response?.data;
+    console.error(`[Figma] exportByUrl(${fileKey}) — status: ${status}, body:`, body);
+
+    if (status === 403) {
+      throw new Error('FIGMA_TOKEN неверный или просрочен. Обнови токен: figma.com → Settings → Security → Personal access tokens');
+    }
+    if (status === 404) {
+      throw new Error('Файл не найден в Figma. Проверь ссылку и доступ к файлу.');
+    }
+    throw new Error(`Figma API error ${status}: ${JSON.stringify(body) || err.message}`);
+  }
+}
+
+/**
+ * Проверить подключение к Figma API при старте
+ */
+export async function testFigmaConnection(): Promise<{ ok: boolean; message: string }> {
+  const token = process.env.FIGMA_TOKEN;
+  if (!token) {
+    console.warn('[Figma] ⚠️ FIGMA_TOKEN не задан — команда /figma не будет работать');
+    return { ok: false, message: 'FIGMA_TOKEN не задан' };
   }
 
-  console.log(`[Figma] Exported "${res.data.name}": ${frameImages.length} frames`);
-  return {
-    fileKey,
-    fileName: res.data.name,
-    frameImages,
-    thumbnailUrl: res.data.thumbnailUrl || '',
-  };
+  try {
+    const res = await axios.get('https://api.figma.com/v1/me', {
+      headers: { 'X-Figma-Token': token },
+      timeout: 10000,
+    });
+    console.log(`[Figma] ✅ Подключение OK! Пользователь: ${res.data.email || res.data.handle}`);
+    return { ok: true, message: `Пользователь: ${res.data.email || res.data.handle}` };
+  } catch (err: any) {
+    const status = err.response?.status;
+    if (status === 403) {
+      console.error('[Figma] ❌ Токен неверный или просрочен (403)');
+      return { ok: false, message: 'Токен неверный или просрочен' };
+    }
+    console.error('[Figma] ❌ Ошибка подключения:', err.message);
+    return { ok: false, message: err.message };
+  }
 }
 
 /**

@@ -5,7 +5,7 @@ import { bot } from '../services/telegram.js';
 import { db } from '../db/index.js';
 import { users, channels, posts, documents, schedules } from '../db/schema.js';
 import { eq, desc, and } from 'drizzle-orm';
-import { createPresentation, formatSlidesAsText, exportByUrl as figmaExportByUrl } from '../services/figma.js';
+import { formatSlidesAsText, exportByUrl as figmaExportByUrl, testFigmaConnection } from '../services/figma.js';
 import { createPresentationInCanva, exportByUrl as canvaExportByUrl } from '../services/canva.js';
 import { generatePost, generateImagePrompt, regeneratePost, generateSlidesStructure, splitMessage } from '../services/claude.js';
 import { generateImage } from '../services/flux.js';
@@ -944,14 +944,13 @@ bot.command('figma', async (ctx) => {
 
     if (!result.frameImages.length) {
       return ctx.reply(
-        `📐 *${result.fileName}*\n\n` +
+        `📐 ${result.fileName}\n\n` +
         `Фреймы не найдены. Убедись, что файл содержит фреймы на первой странице.\n\n` +
-        `🔗 Файл: ${figmaUrl}`,
-        { parse_mode: 'Markdown' }
+        `🔗 Файл: ${figmaUrl}`
       );
     }
 
-    await ctx.reply(`📐 *${result.fileName}*\n${result.frameImages.length} фреймов`, { parse_mode: 'Markdown' });
+    await ctx.reply(`📐 ${result.fileName} — ${result.frameImages.length} фреймов`);
 
     // Отправляем фреймы группами по 10
     const chunks: typeof result.frameImages[] = [];
@@ -978,13 +977,12 @@ bot.command('figma', async (ctx) => {
 
     if (err.message?.includes('FIGMA_TOKEN')) {
       return ctx.reply(
-        '❌ FIGMA_TOKEN не задан.\n\n' +
+        '❌ FIGMA_TOKEN не задан или невалиден.\n\n' +
         'Получи токен: figma.com → Settings → Security → Personal access tokens\n' +
-        'Добавь в .env: `FIGMA_TOKEN=your_token`',
-        { parse_mode: 'Markdown' }
+        'Добавь в переменные окружения: FIGMA_TOKEN=your_token'
       );
     }
-    await ctx.reply(`❌ Ошибка загрузки из Figma: ${err.message}`);
+    await ctx.reply(`❌ Ошибка Figma: ${err.message}`);
   }
 });
 
@@ -1091,6 +1089,9 @@ export async function startBot() {
     console.error('[DB] Таблица channels недоступна:', err.message);
     console.error('[DB] Нужно выполнить миграции: pnpm db:push');
   }
+
+  // Диагностика внешних сервисов
+  testFigmaConnection().catch(() => {});
 
   console.log('[Bot] Запуск Telegram бота через long polling...');
   await bot.telegram.deleteWebhook();
